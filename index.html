@@ -250,26 +250,45 @@
         const scouterJsonInput = document.getElementById('scouterJsonInput');
         const loadingSpinner = document.getElementById('loadingSpinner');
 
+        // Helper function to normalize cut object with various field names
+        function normalizeCut(cut) {
+            return {
+                ...cut,
+                // Normalize title field (priority order)
+                title: cut.title || cut.clip_title || cut.plan_title,
+                // Normalize reason field (priority order)
+                reason: cut.reason || cut.curator_reason || cut.selection_reason || cut.plan_reason,
+                // Keep original fields for reference
+                start_time: cut.start_time,
+                end_time: cut.end_time
+            };
+        }
+
         // Helper function to extract cuts array from jsonData
         function getCutsArray(data) {
+            let rawCuts = null;
+
             if (Array.isArray(data)) {
-                return data;
+                rawCuts = data;
             }
-
-            // Direct keys
-            if (data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts) {
-                return data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts;
+            // Direct keys - check all possible field names
+            else if (data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks) {
+                rawCuts = data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks;
             }
-
             // Check if results array exists and flatten all clips
-            if (data.results && Array.isArray(data.results)) {
+            else if (data.results && Array.isArray(data.results)) {
                 const allClips = [];
                 data.results.forEach(result => {
                     if (result.clips && Array.isArray(result.clips)) {
                         allClips.push(...result.clips);
                     }
                 });
-                return allClips.length > 0 ? allClips : null;
+                rawCuts = allClips.length > 0 ? allClips : null;
+            }
+
+            // Normalize all cuts to have consistent field names
+            if (rawCuts && Array.isArray(rawCuts)) {
+                return rawCuts.map(normalizeCut);
             }
 
             return null;
