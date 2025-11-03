@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roughcut Viewer - QA Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .video-overlay {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            right: 420px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            transition: opacity 0.3s;
+        }
+        .cut-item {
+            transition: all 0.2s;
+        }
+        .cut-item:hover {
+            transform: translateX(-4px);
+        }
+        .cut-item.active {
+            background: #3b82f6;
+            color: white;
+        }
+        .drop-zone {
+            border: 3px dashed #cbd5e1;
+            transition: all 0.3s;
+        }
+        .drop-zone.drag-over {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background: #374151;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+    <!-- Top Control Bar -->
+    <div id="controlBar" class="hidden fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 px-4 py-2 z-20 flex gap-2">
+        <button onclick="changeVideo()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            영상 변경
+        </button>
+        <button onclick="showCutChangeModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            Cut 변경
+        </button>
+    </div>
+
+    <!-- Cut Change Modal -->
+    <div id="cutChangeModal" class="modal hidden">
+        <div class="modal-content">
+            <h3 class="text-white text-xl font-bold mb-4">Cut 변경</h3>
+            <div class="space-y-3">
+                <button onclick="selectCutFile()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg">
+                    파일에서 불러오기
+                </button>
+                <button onclick="showCutTextInput()" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg">
+                    직접 입력
+                </button>
+                <button onclick="showCombinedInputModal()" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-6 rounded-lg">
+                    큐레이터·스카우터 결합 입력
+                </button>
+                <button onclick="closeCutChangeModal()" class="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg">
+                    취소
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cut Text Input Modal -->
+    <div id="cutTextModal" class="modal hidden">
+        <div class="modal-content">
+            <h3 class="text-white text-xl font-bold mb-4">Cut JSON 입력</h3>
+            <textarea id="cutTextInput"
+                      placeholder='{"cuts": [{"start_time": 0, "end_time": 10, "title": "...", "reason": "..."}]}'
+                      class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-xs mb-4"
+                      rows="12"></textarea>
+            <div class="flex gap-2">
+                <button onclick="applyCutText()" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg">
+                    적용
+                </button>
+                <button onclick="closeCutTextModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg">
+                    취소
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Curator/Scouter Combined Input Modal -->
+    <div id="combinedInputModal" class="modal hidden">
+        <div class="modal-content max-w-3xl">
+            <h3 class="text-white text-xl font-bold mb-4">큐레이터·스카우터 JSON 결합</h3>
+            <p class="text-gray-300 text-sm mb-4">
+                각각의 JSON을 붙여넣으면 candidate_id 기준으로 자동 결합합니다. 비워둔 입력칸은 마지막으로 저장된 내용을 그대로 사용합니다.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="scouterJsonInput" class="block text-gray-200 text-sm font-medium mb-2">스카우터 JSON</label>
+                    <textarea id="scouterJsonInput"
+                              placeholder='{"results": [{"chunk_id": "...", "clips": [...]}]}'
+                              class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-xs"
+                              rows="12"></textarea>
+                </div>
+                <div>
+                    <label for="curatorJsonInput" class="block text-gray-200 text-sm font-medium mb-2">큐레이터 JSON</label>
+                    <textarea id="curatorJsonInput"
+                              placeholder='{"selected_candidates": [...]}'
+                              class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-purple-500 focus:outline-none font-mono text-xs"
+                              rows="12"></textarea>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button onclick="applyCombinedInput()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-6 rounded-lg">
+                    결합 적용
+                </button>
+                <button onclick="closeCombinedInputModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg">
+                    취소
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" class="h-screen flex pt-12">
+        <!-- Main Video Area -->
+        <div class="flex-1 relative bg-black flex items-center justify-center">
+            <!-- File Upload Zone -->
+            <div id="uploadZone" class="drop-zone absolute inset-0 flex flex-col items-center justify-center bg-gray-800 z-10">
+                <div class="text-center p-8 rounded-lg bg-gray-700 max-w-md">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <h2 class="text-2xl font-bold text-white mb-2">Roughcut Viewer</h2>
+                    <p class="text-gray-300 mb-4">비디오는 드래그하고, JSON은 입력하세요</p>
+                    <input type="file" id="videoInput" accept="video/*" class="hidden">
+                    <input type="file" id="videoInputChange" accept="video/*" class="hidden">
+                    <input type="file" id="cutFileInput" accept=".json" class="hidden">
+                    <div class="space-y-3">
+                        <button onclick="document.getElementById('videoInput').click()"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg">
+                            비디오 파일 선택
+                        </button>
+                        <textarea id="jsonTextarea"
+                                  placeholder='{"cuts": [{"start_time": 0, "end_time": 10, "title": "...", "reason": "..."}]}'
+                                  class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-xs"
+                                  rows="8"
+                                  autocomplete="off"></textarea>
+                        <button onclick="loadJsonFromText()"
+                                class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg">
+                            시작하기
+                        </button>
+                    </div>
+                    <div id="fileStatus" class="mt-4 text-sm text-gray-400"></div>
+                </div>
+            </div>
+
+            <!-- Video Player -->
+            <video id="videoPlayer" class="hidden w-full h-full" controls></video>
+
+            <!-- Video Overlay -->
+            <div id="videoOverlay" class="video-overlay hidden">
+                <h3 id="cutTitle" class="text-xl font-bold mb-2"></h3>
+                <p id="cutReason" class="text-gray-300 text-sm"></p>
+            </div>
+        </div>
+
+        <!-- Cuts Sidebar -->
+        <div id="cutsSidebar" class="hidden w-96 bg-gray-800 overflow-y-auto">
+            <div class="p-4 bg-gray-700 border-b border-gray-600 sticky top-0 z-10">
+                <h2 class="text-white font-bold text-lg">Cuts List</h2>
+                <div class="text-gray-400 text-sm mt-1">
+                    <span id="cutCount">0</span> cuts
+                </div>
+            </div>
+            <div id="cutsList" class="p-2"></div>
+        </div>
+    </div>
+
+    <script>
+        let videoFile = null;
+        let jsonData = null;
+        let currentCutIndex = 0;
+        let cuts = [];
+        let curatorData = null;
+        let scouterData = null;
+        let curatorRawText = '';
+        let scouterRawText = '';
+
+        const videoPlayer = document.getElementById('videoPlayer');
+        const uploadZone = document.getElementById('uploadZone');
+        const videoOverlay = document.getElementById('videoOverlay');
+        const cutsSidebar = document.getElementById('cutsSidebar');
+        const cutsList = document.getElementById('cutsList');
+        const fileStatus = document.getElementById('fileStatus');
+        const controlBar = document.getElementById('controlBar');
+        const combinedInputModal = document.getElementById('combinedInputModal');
+        const curatorJsonInput = document.getElementById('curatorJsonInput');
+        const scouterJsonInput = document.getElementById('scouterJsonInput');
+
+        // Helper function to extract cuts array from jsonData
+        function getCutsArray(data) {
+            if (Array.isArray(data)) {
+                return data;
+            }
+
+            // Direct keys
+            if (data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts) {
+                return data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts;
+            }
+
+            // Check if results array exists and flatten all clips
+            if (data.results && Array.isArray(data.results)) {
+                const allClips = [];
+                data.results.forEach(result => {
+                    if (result.clips && Array.isArray(result.clips)) {
+                        allClips.push(...result.clips);
+                    }
+                });
+                return allClips.length > 0 ? allClips : null;
+            }
+
+            return null;
+        }
+
+        // IndexedDB setup
+        let db;
+        const DB_NAME = 'RoughcutViewerDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'playerData';
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    db = request.result;
+                    resolve(db);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+            });
+        }
+
+        async function saveToIndexedDB(key, value) {
+            if (!db) await initDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.put(value, key);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function loadFromIndexedDB(key) {
+            if (!db) await initDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([STORE_NAME], 'readonly');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // Auto-restore on page load
+        (async () => {
+            await initDB();
+            const savedVideoBlob = await loadFromIndexedDB('videoFile');
+            const savedJSON = await loadFromIndexedDB('jsonData');
+            const savedCurator = await loadFromIndexedDB('curatorData');
+            const savedScouter = await loadFromIndexedDB('scouterData');
+            const savedCuratorRaw = await loadFromIndexedDB('curatorRawText');
+            const savedScouterRaw = await loadFromIndexedDB('scouterRawText');
+
+            if (savedVideoBlob && savedJSON) {
+                // Convert Blob back to File-like object
+                videoFile = new File([savedVideoBlob], 'cached_video.mp4', { type: savedVideoBlob.type });
+                jsonData = savedJSON;
+
+                // Auto-start player
+                checkAndStart();
+            }
+
+            if (savedCurator !== undefined) {
+                curatorData = savedCurator;
+            }
+            if (savedScouter !== undefined) {
+                scouterData = savedScouter;
+            }
+            if (typeof savedCuratorRaw === 'string') {
+                curatorRawText = savedCuratorRaw;
+            }
+            if (typeof savedScouterRaw === 'string') {
+                scouterRawText = savedScouterRaw;
+            }
+
+            updateFileStatus();
+        })();
+
+        // File inputs
+        document.getElementById('videoInput').addEventListener('change', async (e) => {
+            const fileInput = e.target;
+            if (fileInput.files[0]) {
+                videoFile = fileInput.files[0];
+                // Save video to IndexedDB immediately when selected
+                try {
+                    await saveToIndexedDB('videoFile', videoFile);
+                } catch (error) {
+                    console.error('Failed to save video to IndexedDB:', error);
+                }
+                updateFileStatus();
+            }
+            fileInput.value = '';
+        });
+
+        document.getElementById('videoInputChange').addEventListener('change', async (e) => {
+            const fileInput = e.target;
+            if (fileInput.files[0]) {
+                videoFile = fileInput.files[0];
+                // Save new video to IndexedDB when video changes
+                try {
+                    await saveToIndexedDB('videoFile', videoFile);
+                } catch (error) {
+                    console.error('Failed to save video to IndexedDB:', error);
+                }
+                reloadPlayer();
+            }
+            fileInput.value = '';
+        });
+
+        document.getElementById('cutFileInput').addEventListener('change', (e) => {
+            const fileInput = e.target;
+            if (fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        jsonData = JSON.parse(event.target.result);
+                        reloadPlayer();
+                        closeCutChangeModal();
+                        resetCombinedSources().catch((error) => {
+                            console.error('Failed to reset combined sources:', error);
+                        });
+                    } catch (error) {
+                        alert('JSON 파일을 읽을 수 없습니다: ' + error.message);
+                    }
+                };
+                reader.onloadend = () => {
+                    fileInput.value = '';
+                };
+                reader.readAsText(fileInput.files[0]);
+            } else {
+                fileInput.value = '';
+            }
+        });
+
+        // Modal functions
+        function showCutChangeModal() {
+            document.getElementById('cutChangeModal').classList.remove('hidden');
+        }
+
+        function closeCutChangeModal() {
+            document.getElementById('cutChangeModal').classList.add('hidden');
+        }
+
+        function showCutTextInput() {
+            closeCutChangeModal();
+            document.getElementById('cutTextModal').classList.remove('hidden');
+        }
+
+        function closeCutTextModal() {
+            document.getElementById('cutTextModal').classList.add('hidden');
+        }
+
+        function selectCutFile() {
+            closeCutChangeModal();
+            document.getElementById('cutFileInput').click();
+        }
+
+        async function applyCutText() {
+            const textarea = document.getElementById('cutTextInput');
+            const jsonText = textarea.value.trim();
+
+            if (!jsonText) {
+                alert('JSON 데이터를 입력해주세요');
+                return;
+            }
+
+            try {
+                jsonData = JSON.parse(jsonText);
+                reloadPlayer();
+                closeCutTextModal();
+                await resetCombinedSources();
+            } catch (error) {
+                alert('JSON 파싱 오류: ' + error.message);
+            }
+        }
+
+        function changeVideo() {
+            document.getElementById('videoInputChange').click();
+        }
+
+        function reloadPlayer() {
+            if (videoFile && jsonData && getCutsArray(jsonData)) {
+                startPlayer(false); // Don't save video on cut change
+                updateFileStatus();
+            }
+        }
+
+        // Load JSON from textarea
+        function loadJsonFromText() {
+            const textarea = document.getElementById('jsonTextarea');
+            const jsonText = textarea.value.trim();
+
+            if (!jsonText) {
+                alert('JSON 데이터를 입력해주세요');
+                return;
+            }
+
+            try {
+                jsonData = JSON.parse(jsonText);
+                updateFileStatus();
+                checkAndStart();
+                resetCombinedSources().catch((error) => {
+                    console.error('Failed to reset combined sources:', error);
+                });
+            } catch (error) {
+                alert('JSON 파싱 오류: ' + error.message);
+            }
+        }
+
+        // Drag and drop
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('drag-over');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('drag-over');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                if (file.type.startsWith('video/')) {
+                    videoFile = file;
+                }
+            });
+            updateFileStatus();
+        });
+
+        function updateFileStatus() {
+            const status = [];
+            if (videoFile) status.push(`✓ 비디오: ${videoFile.name}`);
+            if (jsonData) {
+                const cutsArray = getCutsArray(jsonData);
+                status.push(`✓ JSON: ${cutsArray?.length || 0} cuts`);
+            }
+            if (curatorData && (curatorData.selected_count || (Array.isArray(curatorData.selected_candidates) && curatorData.selected_candidates.length))) {
+                const count = curatorData.selected_count || curatorData.selected_candidates.length;
+                status.push(`✓ 큐레이터: ${count}개 선택`);
+            }
+            if (scouterData && (Array.isArray(scouterData.results) || typeof scouterData.total_clips === 'number')) {
+                let total = 0;
+                if (Array.isArray(scouterData.results)) {
+                    total = scouterData.results.reduce((acc, result) => acc + (Array.isArray(result.clips) ? result.clips.length : 0), 0);
+                } else if (typeof scouterData.total_clips === 'number') {
+                    total = scouterData.total_clips;
+                }
+                status.push(`✓ 스카우터: ${total}개 클립`);
+            }
+            fileStatus.innerHTML = status.join('<br>');
+        }
+
+        function checkAndStart() {
+            if (videoFile && jsonData && getCutsArray(jsonData)) {
+                startPlayer(true); // Save video on initial start
+            }
+        }
+
+        async function startPlayer(saveVideo = true) {
+            cuts = getCutsArray(jsonData);
+
+            // Sort cuts by start_time
+            cuts.sort((a, b) => a.start_time - b.start_time);
+
+            // Save to IndexedDB for persistence
+            try {
+                if (saveVideo) {
+                    await saveToIndexedDB('videoFile', videoFile);
+                }
+                // Always save JSON data (lightweight)
+                await saveToIndexedDB('jsonData', jsonData);
+            } catch (error) {
+                console.error('Failed to save to IndexedDB:', error);
+            }
+
+            // Show video player and hide upload zone
+            uploadZone.classList.add('hidden');
+            videoPlayer.classList.remove('hidden');
+            videoOverlay.classList.remove('hidden');
+            cutsSidebar.classList.remove('hidden');
+            controlBar.classList.remove('hidden');
+
+            // Load video
+            const videoURL = URL.createObjectURL(videoFile);
+            videoPlayer.src = videoURL;
+
+            // Render cuts list
+            renderCutsList();
+
+            // Play first cut
+            playCut(0);
+
+            // Update cut count
+            document.getElementById('cutCount').textContent = cuts.length;
+            updateFileStatus();
+        }
+
+        function showCombinedInputModal() {
+            closeCutChangeModal();
+            curatorJsonInput.value = curatorRawText || '';
+            scouterJsonInput.value = scouterRawText || '';
+            combinedInputModal.classList.remove('hidden');
+        }
+
+        function closeCombinedInputModal() {
+            combinedInputModal.classList.add('hidden');
+        }
+
+        async function applyCombinedInput() {
+            const curatorText = curatorJsonInput.value.trim();
+            const scouterText = scouterJsonInput.value.trim();
+
+            const effectiveCuratorText = curatorText || curatorRawText.trim();
+            const effectiveScouterText = scouterText || scouterRawText.trim();
+
+            if (!effectiveCuratorText) {
+                alert('큐레이터 JSON을 입력해주세요.');
+                return;
+            }
+
+            if (!effectiveScouterText) {
+                alert('스카우터 JSON을 입력해주세요.');
+                return;
+            }
+
+            try {
+                const parsedCurator = JSON.parse(effectiveCuratorText);
+                const parsedScouter = JSON.parse(effectiveScouterText);
+
+                const combined = combineCuratorAndScouter(parsedCurator, parsedScouter);
+
+                curatorData = parsedCurator;
+                scouterData = parsedScouter;
+                curatorRawText = curatorText || effectiveCuratorText;
+                scouterRawText = scouterText || effectiveScouterText;
+
+                jsonData = combined;
+
+                await saveToIndexedDB('jsonData', jsonData);
+                await saveCombinedSources();
+
+                reloadPlayer();
+                closeCombinedInputModal();
+            } catch (error) {
+                console.error('Failed to combine curator/scouter JSON:', error);
+                alert('결합 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        function combineCuratorAndScouter(curatorJson, scouterJson) {
+            const candidates = curatorJson?.selected_candidates;
+            if (!Array.isArray(candidates) || candidates.length === 0) {
+                throw new Error('큐레이터 JSON에서 selected_candidates를 찾을 수 없습니다.');
+            }
+
+            const results = scouterJson?.results;
+            if (!Array.isArray(results) || results.length === 0) {
+                throw new Error('스카우터 JSON에서 results 배열을 찾을 수 없습니다.');
+            }
+
+            const clipMap = new Map();
+            results.forEach((result) => {
+                const chunkId = result?.chunk_id;
+                if (!chunkId || !Array.isArray(result.clips)) {
+                    return;
+                }
+                result.clips.forEach((clip, index) => {
+                    const clipId = `${chunkId}-clip-${index.toString().padStart(3, '0')}`;
+                    clipMap.set(clipId, {
+                        ...clip,
+                        chunk_id: chunkId,
+                        candidate_id: clipId,
+                    });
+                });
+            });
+
+            const missingIds = [];
+            const combinedCuts = candidates.map((candidate) => {
+                const clip = clipMap.get(candidate.candidate_id);
+                if (!clip) {
+                    missingIds.push(candidate.candidate_id);
+                    return null;
+                }
+                return {
+                    chunk_id: candidate.chunk_id || clip.chunk_id,
+                    candidate_id: candidate.candidate_id,
+                    start_time: clip.start_time,
+                    end_time: clip.end_time,
+                    title: clip.title,
+                    clip_title: clip.title,
+                    reason: candidate.curator_reason || clip.selection_reason,
+                    curator_reason: candidate.curator_reason,
+                    selection_reason: clip.selection_reason,
+                    factual_summary: clip.factual_summary,
+                };
+            }).filter(Boolean);
+
+            if (missingIds.length > 0) {
+                throw new Error(`다음 candidate_id를 스카우터 결과에서 찾을 수 없습니다: ${missingIds.join(', ')}`);
+            }
+
+            combinedCuts.sort((a, b) => a.start_time - b.start_time);
+
+            return {
+                cuts: combinedCuts,
+                source_metadata: {
+                    curator_requested_at: curatorJson.requested_at || null,
+                    scouter_requested_at: scouterJson.requested_at || null,
+                    generated_at: new Date().toISOString(),
+                },
+            };
+        }
+
+        async function saveCombinedSources() {
+            try {
+                await saveToIndexedDB('curatorData', curatorData);
+                await saveToIndexedDB('scouterData', scouterData);
+                await saveToIndexedDB('curatorRawText', curatorRawText);
+                await saveToIndexedDB('scouterRawText', scouterRawText);
+                updateFileStatus();
+            } catch (error) {
+                console.error('Failed to save combined sources:', error);
+            }
+        }
+
+        async function resetCombinedSources() {
+            curatorData = null;
+            scouterData = null;
+            curatorRawText = '';
+            scouterRawText = '';
+            try {
+                await saveCombinedSources();
+            } catch (error) {
+                console.error('Failed to reset combined sources:', error);
+            }
+        }
+
+        // Calculate edited (accumulated) time
+        function getEditedTimeRange(cutIndex) {
+            let startEdited = 0;
+            for (let i = 0; i < cutIndex; i++) {
+                startEdited += cuts[i].end_time - cuts[i].start_time;
+            }
+            const endEdited = startEdited + (cuts[cutIndex].end_time - cuts[cutIndex].start_time);
+            return { start: startEdited, end: endEdited };
+        }
+
+        function renderCutsList() {
+            cutsList.innerHTML = '';
+            cuts.forEach((cut, index) => {
+                const editedTime = getEditedTimeRange(index);
+                const duration = Math.round(cut.end_time - cut.start_time);
+                const cutItem = document.createElement('div');
+                cutItem.className = 'cut-item p-4 mb-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600';
+                cutItem.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-white font-medium text-sm">#${index + 1} (${formatDuration(duration)})</span>
+                        <div class="text-right">
+                            <div class="text-gray-300 text-xs">${formatTime(editedTime.start)} ~ ${formatTime(editedTime.end)}</div>
+                            <div class="text-gray-400 text-xs mt-0.5">(원본 ${formatTimeWithHours(cut.start_time)} ~ ${formatTimeWithHours(cut.end_time)})</div>
+                        </div>
+                    </div>
+                    <h4 class="text-white font-semibold mb-1">${cut.title || cut.clip_title}</h4>
+                    <p class="text-gray-400 text-xs line-clamp-2">${cut.reason || cut.selection_reason || cut.curator_reason}</p>
+                    <div class="progress-bar-container mt-2 bg-gray-600 rounded-full h-1 overflow-hidden" style="display: none;">
+                        <div class="progress-bar-fill bg-blue-400 h-full transition-all duration-100" style="width: 0%"></div>
+                    </div>
+                `;
+                cutItem.onclick = () => playCut(index);
+                cutsList.appendChild(cutItem);
+            });
+        }
+
+        function playCut(index) {
+            if (index < 0 || index >= cuts.length) return;
+
+            currentCutIndex = index;
+            const cut = cuts[index];
+
+            // Update active state in sidebar
+            document.querySelectorAll('.cut-item').forEach((item, i) => {
+                if (i === index) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+
+            // Scroll to active cut
+            const activeItem = cutsList.children[index];
+            if (activeItem) {
+                activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Update overlay
+            document.getElementById('cutTitle').textContent = cut.title || cut.clip_title;
+            document.getElementById('cutReason').textContent = cut.reason || cut.selection_reason || cut.curator_reason;
+
+            // Seek to start time and play
+            videoPlayer.currentTime = cut.start_time;
+            videoPlayer.play();
+        }
+
+        // Monitor video time and jump to next cut when current cut ends
+        videoPlayer.addEventListener('timeupdate', () => {
+            if (cuts.length === 0) return;
+
+            const cut = cuts[currentCutIndex];
+
+            // Update progress bar
+            const cutItems = document.querySelectorAll('.cut-item');
+            cutItems.forEach((item, i) => {
+                const progressContainer = item.querySelector('.progress-bar-container');
+                const progressFill = item.querySelector('.progress-bar-fill');
+
+                if (i === currentCutIndex) {
+                    // Show and update progress bar for active cut
+                    progressContainer.style.display = 'block';
+                    const progress = ((videoPlayer.currentTime - cut.start_time) / (cut.end_time - cut.start_time)) * 100;
+                    progressFill.style.width = Math.max(0, Math.min(100, progress)) + '%';
+                } else {
+                    // Hide progress bar for inactive cuts
+                    progressContainer.style.display = 'none';
+                }
+            });
+
+            if (videoPlayer.currentTime >= cut.end_time) {
+                // Move to next cut
+                if (currentCutIndex < cuts.length - 1) {
+                    playCut(currentCutIndex + 1);
+                } else {
+                    // Last cut finished
+                    videoPlayer.pause();
+                }
+            }
+        });
+
+        // Skip time with boundary correction
+        function skipTime(seconds) {
+            const currentCut = cuts[currentCutIndex];
+            let newTime = videoPlayer.currentTime + seconds;
+
+            // Forward skip
+            if (seconds > 0) {
+                if (newTime >= currentCut.end_time) {
+                    // Jump to next cut
+                    if (currentCutIndex < cuts.length - 1) {
+                        playCut(currentCutIndex + 1);
+                    } else {
+                        // Last cut - stay at end
+                        videoPlayer.currentTime = currentCut.end_time - 0.1;
+                    }
+                } else {
+                    videoPlayer.currentTime = newTime;
+                }
+            }
+            // Backward skip
+            else {
+                if (newTime < currentCut.start_time) {
+                    // Jump to previous cut's end - 1 second
+                    if (currentCutIndex > 0) {
+                        const prevCut = cuts[currentCutIndex - 1];
+                        videoPlayer.currentTime = prevCut.end_time - 1;
+                        currentCutIndex = currentCutIndex - 1;
+
+                        // Update active state in sidebar
+                        document.querySelectorAll('.cut-item').forEach((item, i) => {
+                            if (i === currentCutIndex) {
+                                item.classList.add('active');
+                            } else {
+                                item.classList.remove('active');
+                            }
+                        });
+
+                        // Scroll to active cut
+                        const activeItem = cutsList.children[currentCutIndex];
+                        if (activeItem) {
+                            activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+
+                        // Update overlay
+                        document.getElementById('cutTitle').textContent = cuts[currentCutIndex].title;
+                        document.getElementById('cutReason').textContent = cuts[currentCutIndex].reason || cuts[currentCutIndex].selection_reason || cuts[currentCutIndex].curator_reason;
+                    } else {
+                        // First cut - stay at start
+                        videoPlayer.currentTime = currentCut.start_time;
+                    }
+                } else {
+                    videoPlayer.currentTime = newTime;
+                }
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (cuts.length === 0) return;
+
+            switch(e.key) {
+                case 'ArrowRight':
+                    e.preventDefault();
+                    // → : Skip forward 5 seconds
+                    skipTime(5);
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    // ← : Skip backward 5 seconds
+                    skipTime(-5);
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    // ↓ : Next cut
+                    if (currentCutIndex < cuts.length - 1) {
+                        playCut(currentCutIndex + 1);
+                    }
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    // ↑ : Previous cut
+                    if (currentCutIndex > 0) {
+                        playCut(currentCutIndex - 1);
+                    }
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    if (videoPlayer.paused) {
+                        videoPlayer.play();
+                    } else {
+                        videoPlayer.pause();
+                    }
+                    break;
+                case 'r':
+                    e.preventDefault();
+                    playCut(currentCutIndex); // Replay current cut
+                    break;
+            }
+        });
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            if (mins === 0) {
+                return `${secs}초`;
+            }
+            return `${mins}분 ${secs}초`;
+        }
+
+        function formatTimeWithHours(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+    </script>
+</body>
+</html>
