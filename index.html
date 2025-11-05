@@ -116,7 +116,7 @@
         <div class="modal-content">
             <h3 class="text-white text-xl font-bold mb-4">Cut JSON 입력</h3>
             <textarea id="cutTextInput"
-                      placeholder='{"cuts": [{"start_time": 0, "end_time": 10, "title": "...", "reason": "..."}]}'
+                      placeholder='{"cuts": [...]} 또는 {"matches": [...]}'
                       class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-xs mb-4"
                       rows="12"></textarea>
             <div class="flex gap-2">
@@ -184,7 +184,7 @@
                             비디오 파일 선택
                         </button>
                         <textarea id="jsonTextarea"
-                                  placeholder='{"cuts": [{"start_time": 0, "end_time": 10, "title": "...", "reason": "..."}]}'
+                                  placeholder='{"cuts": [...]} 또는 {"matches": [...]}'
                                   class="w-full bg-gray-800 text-white p-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none font-mono text-xs"
                                   rows="8"
                                   autocomplete="off"></textarea>
@@ -273,8 +273,8 @@
                 rawCuts = data;
             }
             // Direct keys - check all possible field names
-            else if (data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks) {
-                rawCuts = data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks;
+            else if (data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks || data.matches) {
+                rawCuts = data.cuts || data.clips || data.selected_cuts || data.final_clips || data.final_cuts || data.chunks || data.matches;
             }
             // Check if results array exists and flatten all clips
             else if (data.results && Array.isArray(data.results)) {
